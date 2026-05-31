@@ -1,0 +1,6 @@
+deployment:
+  replicas: 1
+  environment: dev
+  image: mamidalahemanchandra/catalogue:v1
+service:
+  environment: dev
