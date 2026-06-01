@@ -1,60 +1,93 @@
-Great. After setting up the VPC peering, verify these items in order:
+If you want your Jenkins agent in the default VPC to access an EKS cluster in roboshop-dev VPC, then VPC Peering is a valid and common solution.
 
-### 1. Confirm Peering is Active
+Here’s a clean, practical setup guide.
 
-```bash
-aws ec2 describe-vpc-peering-connections \
-  --vpc-peering-connection-ids pcx-xxxxxxxx
-```
+✅ VPC Peering Solution (Default VPC ↔ roboshop-dev VPC)
+🔷 1. Create VPC Peering Connection
 
-Status should be:
+Go to AWS Console:
 
-```text
-active
-```
+VPC → Peering Connections → Create Peering Connection
 
-### 2. Verify Route Tables
+Requester VPC: Default VPC (Jenkins)
+Accepter VPC: roboshop-dev VPC (EKS)
 
-**Default VPC route table**
+Then:
 
-```
-Destination: <roboshop-dev CIDR>
-Target: pcx-xxxxxxxx
-```
+Accept the request in the roboshop-dev VPC account/region
+🔷 2. Update Route Tables (VERY IMPORTANT)
+In Default VPC (Jenkins side)
 
-**roboshop-dev VPC route table**
+Add route:
 
-```
-Destination: <default VPC CIDR>
-Target: pcx-xxxxxxxx
-```
+Destination	Target
+roboshop-dev VPC CIDR (e.g. 10.x.x.x/16)	pcx-xxxx
+In roboshop-dev VPC (EKS side)
 
-### 3. Verify Security Groups
+Add route:
 
-Allow traffic from the Jenkins VPC CIDR to the EKS cluster and worker nodes as needed, especially TCP 443.
+Destination	Target
+Default VPC CIDR (e.g. 172.31.0.0/16)	pcx-xxxx
+🔷 3. Security Group Rules
+EKS Control Plane / API Access
 
-### 4. Test from Jenkins Server
+If EKS endpoint is private or restricted:
 
-Check AWS authentication:
+Allow inbound:
 
-```bash
-aws sts get-caller-identity
-```
+Port: 443
+Source: Default VPC CIDR or Jenkins SG
+Worker Nodes (if needed)
 
-Update kubeconfig:
+If Jenkins interacts with pods/services:
 
-```bash
-aws eks update-kubeconfig \
-  --region <region> \
-  --name <cluster-name>
-```
+Allow required service ports (NodePort, 80, 443, etc.)
+🔷 4. DNS Resolution (Important for EKS)
 
-Test cluster access:
+Enable in peering connection:
 
-```bash
+✅ Allow DNS resolution from peer VPC
+
+Also ensure:
+
+EKS VPC has:
+enableDnsHostnames = true
+enableDnsSupport = true
+🔷 5. Verify Connectivity from Jenkins Agent
+
+From Jenkins EC2:
+
+ping <EKS VPC private IP>
+
+Test Kubernetes API:
+
+curl -k https://<eks-cluster-endpoint>
+
+Or:
+
+aws eks update-kubeconfig --name roboshop-dev --region <region>
 kubectl get nodes
-```
+⚠️ Key Limitations of VPC Peering
+❌ No transitive routing (A ↔ B ↔ C won’t work)
+❌ CIDR blocks must NOT overlap
+❌ Manual route management required
+💡 When VPC Peering is NOT ideal
 
-If `kubectl get nodes` works, Jenkins should be able to deploy to EKS successfully.
+If you plan to scale architecture (many VPCs), prefer:
 
-If you encounter an error (timeout, unauthorized, unable to connect, etc.), paste the exact message and I'll help diagnose it.
+AWS Transit Gateway (better long-term)
+Private Jenkins inside EKS VPC (simplest DevOps design)
+🧠 Recommended Architecture (Best Practice)
+
+For CI/CD with EKS:
+
+👉 Put Jenkins agent inside roboshop-dev VPC (same VPC as EKS)
+OR
+👉 Use Transit Gateway if multiple environments exist
+
+If you want, I can help you next with:
+Terraform for VPC Peering setup
+Jenkins pipeline to deploy to EKS
+Fixing kubeconfig / IAM auth issues after peering
+Transit Gateway design vs Peering comparison
+
